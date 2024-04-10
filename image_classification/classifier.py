@@ -62,7 +62,7 @@ class NodeLookup(object):
           FLAGS.model_dir, 'imagenet_synset_to_human_label_map.txt')
     self.node_lookup = self.load(label_lookup_path, uid_lookup_path)
 
-  def load(self, label_lookup_path, uid_lookup_path):
+  def load(self, label_lookup_path, uid_lookup_path):  # trans id to name
     """Loads a human readable English name for each softmax node.
 
     Args:
@@ -72,13 +72,13 @@ class NodeLookup(object):
     Returns:
       dict from integer node ID to human-readable string.
     """
-    if not tf.gfile.Exists(uid_lookup_path):
+    if not tf.io.gfile.exists(uid_lookup_path):
       tf.logging.fatal('File does not exist %s', uid_lookup_path)
-    if not tf.gfile.Exists(label_lookup_path):
+    if not tf.io.gfile.exists(label_lookup_path):
       tf.logging.fatal('File does not exist %s', label_lookup_path)
 
     # Loads mapping from string UID to human-readable string
-    proto_as_ascii_lines = tf.gfile.GFile(uid_lookup_path).readlines()
+    proto_as_ascii_lines = tf.io.gfile.GFile(uid_lookup_path).readlines()
     uid_to_human = {}
     p = re.compile(r'[n\d]*[ \S,]*')
     for line in proto_as_ascii_lines:
@@ -89,7 +89,7 @@ class NodeLookup(object):
 
     # Loads mapping from string UID to integer node ID.
     node_id_to_uid = {}
-    proto_as_ascii = tf.gfile.GFile(label_lookup_path).readlines()
+    proto_as_ascii = tf.io.gfile.GFile(label_lookup_path).readlines()
     for line in proto_as_ascii:
       if line.startswith('  target_class:'):
         target_class = int(line.split(': ')[1])
@@ -116,9 +116,9 @@ class NodeLookup(object):
 def create_graph():
   """Creates a graph from saved GraphDef file and returns a saver."""
   # Creates graph from saved graph_def.pb.
-  with tf.gfile.FastGFile(os.path.join(
+  with tf.compat.v1.gfile.FastGFile(os.path.join(
       FLAGS.model_dir, 'classify_image_graph_def.pb'), 'rb') as f:
-    graph_def = tf.GraphDef()
+    graph_def = tf.compat.v1.GraphDef()
     graph_def.ParseFromString(f.read())
     _ = tf.import_graph_def(graph_def, name='')
 
@@ -132,14 +132,14 @@ def run_inference_on_image(image):
   Returns:
     Nothing
   """
-  if not tf.gfile.Exists(image):
+  if not tf.io.gfile.exists(image):
     tf.logging.fatal('File does not exist %s', image)
-  image_data = tf.gfile.FastGFile(image, 'rb').read()
+  image_data = tf.compat.v1.gfile.FastGFile(image, 'rb').read()
 
   # Creates graph from saved GraphDef.
   create_graph()
 
-  with tf.Session() as sess:
+  with tf.compat.v1.Session() as sess:
     # Some useful tensors:
     # 'softmax:0': A tensor containing the normalized prediction across
     #   1000 labels.
@@ -200,4 +200,4 @@ if __name__ == '__main__':
       help='Display this many predictions.'
   )
   FLAGS, unparsed = parser.parse_known_args()
-  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
+  tf.compat.v1.app.run(main=main, argv=[sys.argv[0]] + unparsed)

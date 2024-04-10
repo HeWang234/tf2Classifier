@@ -238,11 +238,11 @@ def create_inception_graph():
     Graph holding the trained Inception network, and various tensors we'll be
     manipulating.
   """
-  with tf.Session() as sess:
+  with tf.compat.v1.Session() as sess:
     model_filename = os.path.join(
         FLAGS.model_dir, 'classify_image_graph_def.pb')
-    with gfile.FastGFile(model_filename, 'rb') as f:
-      graph_def = tf.GraphDef()
+    with tf.compat.v1.gfile.FastGFile(model_filename, 'rb') as f:
+      graph_def = tf.compat.v1.GraphDef()
       graph_def.ParseFromString(f.read())
       bottleneck_tensor, jpeg_data_tensor, resized_input_tensor = (
           tf.import_graph_def(graph_def, name='', return_elements=[
@@ -264,9 +264,7 @@ def run_bottleneck_on_image(sess, image_data, image_data_tensor,
   Returns:
     Numpy array of bottleneck values.
   """
-  bottleneck_values = sess.run(
-      bottleneck_tensor,
-      {image_data_tensor: image_data})
+  bottleneck_values = sess.run(bottleneck_tensor,{image_data_tensor: image_data})
   bottleneck_values = np.squeeze(bottleneck_values)
   return bottleneck_values
 
@@ -637,20 +635,19 @@ def add_final_training_ops(class_count, final_tensor_name, bottleneck_tensor):
     bottleneck input and ground truth input.
   """
   with tf.name_scope('input'):
-    bottleneck_input = tf.placeholder_with_default(
-        bottleneck_tensor, shape=[None, BOTTLENECK_TENSOR_SIZE],
-        name='BottleneckInputPlaceholder')
+    tf.compat.v1.disable_eager_execution()
+    bottleneck_input = tf.compat.v1.placeholder_with_default(
+        bottleneck_tensor, shape=[None, BOTTLENECK_TENSOR_SIZE], name='BottleneckInputPlaceholder')
 
-    ground_truth_input = tf.placeholder(tf.float32,
-                                        [None, class_count],
-                                        name='GroundTruthInput')
+    tf.compat.v1.disable_eager_execution()
+    ground_truth_input = tf.compat.v1.placeholder(tf.float32, [None, class_count], name='GroundTruthInput')
 
   # Organizing the following ops as `final_training_ops` so they're easier
   # to see in TensorBoard
   layer_name = 'final_training_ops'
   with tf.name_scope(layer_name):
     with tf.name_scope('weights'):
-      layer_weights = tf.Variable(tf.truncated_normal([BOTTLENECK_TENSOR_SIZE, class_count], stddev=0.001), name='final_weights')
+      layer_weights = tf.Variable(tf.random.truncated_normal([BOTTLENECK_TENSOR_SIZE, class_count], stddev=0.001), name='final_weights')
       variable_summaries(layer_weights)
     with tf.name_scope('biases'):
       layer_biases = tf.Variable(tf.zeros([class_count]), name='final_biases')
@@ -670,7 +667,7 @@ def add_final_training_ops(class_count, final_tensor_name, bottleneck_tensor):
   tf.summary.scalar('cross_entropy', cross_entropy_mean)
 
   with tf.name_scope('train'):
-    train_step = tf.train.GradientDescentOptimizer(FLAGS.learning_rate).minimize(
+    train_step = tf.compat.v1.train.GradientDescentOptimizer(FLAGS.learning_rate).minimize(
         cross_entropy_mean)
 
   return (train_step, cross_entropy_mean, bottleneck_input, ground_truth_input,
@@ -700,9 +697,9 @@ def add_evaluation_step(result_tensor, ground_truth_tensor):
 
 def main(_):
   # Setup the directory we'll write summaries to for TensorBoard
-  if tf.gfile.Exists(FLAGS.summaries_dir):
-    tf.gfile.DeleteRecursively(FLAGS.summaries_dir)
-  tf.gfile.MakeDirs(FLAGS.summaries_dir)
+  if tf.io.gfile.exists(FLAGS.summaries_dir):
+    tf.io.gfile.rmtree(FLAGS.summaries_dir)  #r1.0 tf.gfile.DeleteRecursively
+  tf.io.gfile.makedirs(FLAGS.summaries_dir)
 
   graph, bottleneck_tensor, jpeg_data_tensor, resized_image_tensor = (
       create_inception_graph())
@@ -723,7 +720,7 @@ def main(_):
   do_distort_images = should_distort_images(
       FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
       FLAGS.random_brightness)
-  sess = tf.Session()
+  sess = tf.compat.v1.Session()
 
   if do_distort_images:
     # We will be applying distortions, so setup the operations we'll need.
@@ -738,21 +735,18 @@ def main(_):
 
   # Add the new layer that we'll be training.
   (train_step, cross_entropy, bottleneck_input, ground_truth_input,
-   final_tensor) = add_final_training_ops(len(image_lists.keys()),
-                                          FLAGS.final_tensor_name,
-                                          bottleneck_tensor)
+   final_tensor) = add_final_training_ops(len(image_lists.keys()),FLAGS.final_tensor_name, bottleneck_tensor)
 
   # Create the operations we need to evaluate the accuracy of our new layer.
   evaluation_step = add_evaluation_step(final_tensor, ground_truth_input)
 
   # Merge all the summaries and write them out to /tmp/retrain_logs (by default)
-  merged = tf.summary.merge_all()
-  train_writer = tf.train.SummaryWriter(FLAGS.summaries_dir + '/train',
-                                        sess.graph)
-  validation_writer = tf.train.SummaryWriter(FLAGS.summaries_dir + '/validation')
+  merged = tf.compat.v1.summary.merge_all()
+  train_writer = tf.compat.v1.summary.FileWriter(FLAGS.summaries_dir + '/train',sess.graph)
+  validation_writer = tf.compat.v1.summary.FileWriter(FLAGS.summaries_dir + '/validation')
 
   # Set up all our weights to their initial default values.
-  init = tf.global_variables_initializer()
+  init = tf.compat.v1.global_variables_initializer()
   sess.run(init)
 
   # Run the training for as many cycles as requested on the command line.
@@ -772,8 +766,7 @@ def main(_):
     # Feed the bottlenecks and ground truth into the graph, and run a training
     # step. Capture training summaries for TensorBoard with the `merged` op.
     train_summary, _ = sess.run([merged, train_step],
-             feed_dict={bottleneck_input: train_bottlenecks,
-                        ground_truth_input: train_ground_truth})
+             feed_dict={bottleneck_input: train_bottlenecks,ground_truth_input: train_ground_truth})
     train_writer.add_summary(train_summary, i)
 
     # Every so often, print out how well the graph is training.
@@ -826,27 +819,27 @@ def main(_):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      '--image_dir',
+      '--image_dir',  #在步骤2中创建的图像文件夹的路径
       type=str,
-      default='',
+      default='', #current_dir_path + 'logo'
       help='Path to folders of labeled images.'
   )
   parser.add_argument(
-      '--output_graph',
+      '--output_graph', #model store
       type=str,
-      default='/tmp/output_graph.pb',
+      default=current_dir_path +r'\output_graph.pb',
       help='Where to save the trained graph.'
   )
   parser.add_argument(
       '--output_labels',
       type=str,
-      default='/tmp/output_labels.txt',
+      default=current_dir_path +r'\output_labels.txt',
       help='Where to save the trained graph\'s labels.'
   )
   parser.add_argument(
       '--summaries_dir',
       type=str,
-      default='/tmp/retrain_logs',
+      default=current_dir_path +r'\retrain_logs',
       help='Where to save summary logs for TensorBoard.'
   )
   parser.add_argument(
@@ -905,9 +898,9 @@ if __name__ == '__main__':
       """
   )
   parser.add_argument(
-      '--model_dir',
+      '--model_dir', #ok model
       type=str,
-      default='/tmp/imagenet',
+      default=current_dir_path + r'\inception',
       help="""\
       Path to classify_image_graph_def.pb,
       imagenet_synset_to_human_label_map.txt, and
@@ -917,7 +910,7 @@ if __name__ == '__main__':
   parser.add_argument(
       '--bottleneck_dir',
       type=str,
-      default='/tmp/bottleneck',
+      default=current_dir_path + r'\bottleneck',
       help='Path to cache bottleneck layer values as files.'
   )
   parser.add_argument(
@@ -964,5 +957,4 @@ if __name__ == '__main__':
       """
   )
   FLAGS, unparsed = parser.parse_known_args()
-  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
-
+  tf.compat.v1.app.run(main=main, argv=[sys.argv[0]] + unparsed)
